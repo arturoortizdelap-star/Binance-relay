@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import fetch from 'node-fetch';   // usamos node-fetch para máxima compatibilidad
 
 const app = express();
 app.use(cors());
@@ -7,25 +8,22 @@ app.use(express.json());
 
 const BINANCE = 'https://api.binance.com';
 
-// Pequeño helper de fetch con timeout
+// helper de reenvío con timeout
 async function fwd(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
   try {
-    const r = await fetch(url, { signal: controller.signal });
+    const r = await fetch(url, { timeout: 15000 });
     const txt = await r.text();
     if (!r.ok) return { ok: false, status: r.status, body: txt };
-    return { ok: true, json: JSON.parse(txt) };
+    try { return { ok: true, json: JSON.parse(txt) }; }
+    catch { return { ok: false, status: 500, body: 'Invalid JSON from upstream: ' + txt.slice(0,200) }; }
   } catch (e) {
     return { ok: false, status: 502, body: String(e) };
-  } finally {
-    clearTimeout(timer);
   }
 }
 
-/* ---------- Rutas compatibles con Binance ---------- */
+/* ---- Rutas tipo Binance ---- */
 
-// 24hr (un símbolo o batch ?symbols=["BTCUSDT","ETHUSDT"])
+// /api/v3/ticker/24hr (un símbolo o batch ?symbols=["BTCUSDT","ETHUSDT"])
 app.get('/api/v3/ticker/24hr', async (req, res) => {
   const { symbol, symbols } = req.query;
 
@@ -48,7 +46,7 @@ app.get('/api/v3/ticker/24hr', async (req, res) => {
   res.status(400).json({ error: 'Missing symbol or symbols' });
 });
 
-// bookTicker (un símbolo o batch)
+// /api/v3/ticker/bookTicker (un símbolo o batch)
 app.get('/api/v3/ticker/bookTicker', async (req, res) => {
   const { symbol, symbols } = req.query;
 
@@ -71,10 +69,10 @@ app.get('/api/v3/ticker/bookTicker', async (req, res) => {
   res.status(400).json({ error: 'Missing symbol or symbols' });
 });
 
-/* ---------- Salud y root ---------- */
+/* ---- Salud y raíz ---- */
 app.get('/', (_req, res) => res.type('text').send('OK - binance relay'));
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
-/* ---------- Arranque ---------- */
-const PORT = process.env.PORT || 10000;     // Render define PORT
+/* ---- Arranque ---- */
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => console.log('Relay escuchando en', PORT));
