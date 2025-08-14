@@ -1,145 +1,143 @@
-// indexer.js — Ejecutado con: node indexer.js
+// index.cjs — Ejecuta con: node index.cjs
 // Construye un index.json con todos los .txt y .md dentro de la carpeta actual (y subcarpetas)
 
 const fs = require('fs').promises;
-constante path = require('path');
+const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 
-const TEXT_DIR = ruta.resolve('.'); // indexea la carpeta actual (binance-raley)
-const OUT_FILE = ruta.resolve('./index.json'); // salida en la misma carpeta
-const ALLOWED_EXT = new Set(['.txt', '.md']); // extensiones permitidas
-constante MAX_BYTES = 5 * 1024 * 1024; // 5 MB por archivo
+const TEXT_DIR = path.resolve('.');            // indexea la carpeta actual
+const OUT_FILE = path.resolve('./index.json'); // salida en la misma carpeta
+const ALLOWED_EXT = new Set(['.txt', '.md']);  // extensiones permitidas
+const MAX_BYTES = 5 * 1024 * 1024;             // 5 MB por archivo
 const CONCURRENCY = Math.max(2, Math.min(os.cpus().length, 8));
 
-función isAllowedFile(archivo) {
-  devuelve ALLOWED_EXT.has(ruta.nombreext(archivo).toLowerCase());
+// ── utilidades ────────────────────────────────────────────────────────────────
+function isAllowedFile(file) {
+  return ALLOWED_EXT.has(path.extname(file).toLowerCase());
 }
 
-función asíncrona safeReadJson(archivo) {
-  intentar {
-    const raw = await fs.readFile(archivo, 'utf8');
-    devuelve JSON.parse(raw);
-  } atrapar {
-    devuelve nulo;
+async function safeReadJson(file) {
+  try {
+    const raw = await fs.readFile(file, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
   }
 }
 
-función sha1(buf) {
-  devolver crypto.createHash('sha1').update(buf).digest('hex');
+function sha1(buf) {
+  return crypto.createHash('sha1').update(buf).digest('hex');
 }
 
-función normalizarTexto(str) {
+function normalizeText(str) {
   return str.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trimEnd();
 }
 
-función fileKey(estadísticas) {
-  devuelve `${stats.size}-${stats.mtimeMs}`;
+function fileKey(stats) {
+  return ${stats.size}-${stats.mtimeMs};
 }
 
-función asíncrona listFilesRecursive(dir) {
-  constante fuera = [];
-  función asíncrona walk(current) {
-    entradas constantes = await fs.readdir(current, { withFileTypes: true });
-    para (constante e de entradas) {
-      const p = path.join(actual, e.nombre);
-      si (e.isDirectory()) {
-        esperar caminar(p);
-      } demás {
-        fuera.push(p);
-      }
+async function listFilesRecursive(dir) {
+  const out = [];
+  async function walk(current) {
+    const entries = await fs.readdir(current, { withFileTypes: true });
+    for (const e of entries) {
+      const p = path.join(current, e.name);
+      if (e.isDirectory()) await walk(p);
+      else out.push(p);
     }
   }
-  esperar caminar(dir);
-  volver afuera;
+  await walk(dir);
+  return out;
 }
 
-función asíncrona buildIndex() {
-  constante anterior =
-    (await safeReadJson(OUT_FILE)) ?? { versión: 1, generado en: '', elementos: [], estadísticas: {} };
-  const prevMap = new Map(previous.items.map(it => [it.relPath, it]));
+// ── indexador ─────────────────────────────────────────────────────────────────
+async function buildIndex() {
+  const previous =
+    (await safeReadJson(OUT_FILE)) ?? { version: 1, generatedAt: '', items: [], stats: {} };
+  const prevMap = new Map(previous.items.map((it) => [it.relPath, it]));
 
-  deje que los archivos = espere listaArchivosRecursivos(TEXTO_DIR);
-  archivos = archivos.filter(isAllowedFile);
+  let files = await listFilesRecursive(TEXT_DIR);
+  files = files.filter(isAllowedFile);
 
-  const elementos = [];
-  const errores = [];
-  deje que se reutilice = 0;
+  const items = [];
+  const errors = [];
+  let reused = 0;
 
-  const cola = [...archivos];
-  trabajadores constantes = Array.from({ length: CONCURRENCY }, () =>
-    (función asíncrona trabajador() {
-      mientras (cola.longitud) {
-        const absPath = cola.pop();
-        const relPath = path.relative(proceso.cwd(), absPath);
-
-        intentar {
-          constante stats = await fs.stat(absPath);
-
-          si (estadísticas.tamaño > MAX_BYTES) {
-            errores.push({ relPath, motivo: `exceder ${MAX_BYTES} bytes` });
-            continuar;
+  const queue = [...files];
+  const workers = Array.from({ length: CONCURRENCY }, () =>
+    (async function worker() {
+      while (queue.length) {
+        const absPath = queue.pop();
+        const relPath = path.relative(process.cwd(), absPath);
+        try {
+          const stats = await fs.stat(absPath);
+          if (stats.size > MAX_BYTES) {
+            errors.push({ relPath, reason: excede ${MAX_BYTES} bytes });
+            continue;
           }
 
-          constante clave = fileKey(estadísticas);
-          constante prev = prevMap.get(relPath);
-          si (prev && prev.validation && prev.validation.fileKey === clave) {
-            elementos.push(prev);
-            reutilizado++;
-            continuar;
+          const key = fileKey(stats);
+          const prev = prevMap.get(relPath);
+          if (prev && prev.validation && prev.validation.fileKey === key) {
+            items.push(prev);
+            reused++;
+            continue;
           }
 
-          constante buf = await fs.readFile(absPath);
-          constante hash = sha1(buf);
-          constante contenido = normalizarTexto(buf.toString('utf8'));
+          const buf = await fs.readFile(absPath);
+          const hash = sha1(buf);
+          const content = normalizeText(buf.toString('utf8'));
 
-          elementos.push({
-            identificación: hash,
-            nombre: ruta.nombrebase(absPath),
+          items.push({
+            id: hash,
+            name: path.basename(absPath),
             relPath,
-            tamaño: stats.size,
-            mtime: nueva Fecha(stats.mtimeMs).toISOString(),
-            contenido,
-            validación: { sha1: hash, fileKey: clave, longitud: content.length }
+            size: stats.size,
+            mtime: new Date(stats.mtimeMs).toISOString(),
+            content,
+            validation: { sha1: hash, fileKey: key, length: content.length },
           });
-        } atrapar (err) {
-          errores.push({ relPath, razón: err && err.message ? err.message : String(err) });
+        } catch (err) {
+          errors.push({ relPath, reason: err && err.message ? err.message : String(err) });
         }
       }
     })()
   );
 
-  esperar Promise.all(trabajadores);
+  await Promise.all(workers);
 
-  carga útil constante = {
-    versión: 1,
-    generadoEn: nueva Fecha().toISOString(),
-    baseDir: ruta.relativa(proceso.cwd(), TEXT_DIR),
-    elementos: elementos.sort((a, b) => a.relPath.localeCompare(b.relPath)),
-    estadísticas: {
-      totalFilesSeen: archivos.length,
-      indexado: elementos.longitud,
-      reutilizado,
-      falló: errores.longitud,
-      máximoBytes: MAX_BYTES,
-      concurrencia: CONCURRENCIA
+  const payload = {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    baseDir: path.relative(process.cwd(), TEXT_DIR),
+    items: items.sort((a, b) => a.relPath.localeCompare(b.relPath)),
+    stats: {
+      totalFilesSeen: files.length,
+      indexed: items.length,
+      reused,
+      failed: errors.length,
+      maxBytes: MAX_BYTES,
+      concurrency: CONCURRENCY,
     },
-    errores
+    errors,
   };
 
-  esperar fs.writeFile(OUT_FILE, JSON.stringify(payload, null, 2), 'utf8');
-  carga útil de retorno;
+  await fs.writeFile(OUT_FILE, JSON.stringify(payload, null, 2), 'utf8');
+  return payload;
 }
 
-(async() => {
-  intentar {
-    const resultado = await buildIndex();
-    const { indexado, reutilizado, fallido } = result.stats;
-    console.log(`✅ Índice listo: ${path.basename(OUT_FILE)}`);
-    console.log(` Indexados: ${indexed} | Reusados: ${reused} | Fallidos: ${failed}`);
-    if (failed > 0) console.log(' Revisa "errors" dentro de index.json para detalles.');
-  } captura (e) {
+// ── main ─────────────────────────────────────────────────────────────────────
+(async () => {
+  try {
+    const result = await buildIndex();
+    const { indexed, reused, failed } = result.stats;
+    console.log(✅ Index listo: ${path.basename(OUT_FILE)});
+    console.log(`   Indexados: ${indexed} | Reusados: ${reused} | Fallidos: ${failed}`);
+    if (failed > 0) console.log('   Revisa "errors" dentro de index.json para detalles.');
+  } catch (e) {
     console.error('❌ Error al construir el índice:', e && e.message ? e.message : e);
-    proceso.salir(1);
+    process.exit(1);
   }
 })();
