@@ -1,4 +1,21 @@
-// index.cjs — Ejecuta con: node index.cjs
+[4:26 p.m., 14/8/2025] Arturo Ortiz de la Peña: // index.cjs — Ejecuta con: node index.cjs
+// Construye un index.json con todos los .txt y .md dentro de la carpeta actual (y subcarpetas)
+
+const fs = require('fs').promises;
+const path = require('path');
+const crypto = require('crypto');
+const os = require('os');
+
+const TEXT_DIR = path.resolve('.');            // indexea la carpeta actual
+const OUT_FILE = path.resolve('./index.json'); // salida en la misma carpeta
+const ALLOWED_EXT = new Set(['.txt', '.md']);  // extensiones permitidas
+const MAX_BYTES = 5 * 1024 * 1024;             // 5 MB por archivo
+const CONCURRENCY = Math.max(2, Math.min(os.cpus().length, 8));
+
+// ── utilidades ────────────────────────────────────────────────────────────────
+function isAllowedFile(file) {
+  return ALLOWED_EXT.has(path.e…
+[4:33 p.m., 14/8/2025] Arturo Ortiz de la Peña: // index.cjs — Ejecuta con: node index.cjs
 // Construye un index.json con todos los .txt y .md dentro de la carpeta actual (y subcarpetas)
 
 const fs = require('fs').promises;
