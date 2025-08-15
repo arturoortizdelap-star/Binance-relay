@@ -1,6 +1,4 @@
 // server.cjs — npm start → node server.cjs
-// Genera un index.json de todos los .txt/.md en ./texts y lo sirve por HTTP.
-
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs').promises;
@@ -15,7 +13,6 @@ const ALLOWED_EXT = new Set(['.txt', '.md']);
 const MAX_BYTES = 5 * 1024 * 1024;
 const CONCURRENCY = Math.max(2, Math.min(os.cpus().length, 8));
 
-// ---------- utils ----------
 function isAllowedFile(file) { return ALLOWED_EXT.has(path.extname(file).toLowerCase()); }
 async function safeReadJson(file) { try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch { return null; } }
 function sha1(buf) { return crypto.createHash('sha1').update(buf).digest('hex'); }
@@ -35,7 +32,6 @@ async function listFilesRecursive(dir) {
   return out;
 }
 
-// ---------- indexer ----------
 async function buildIndex() {
   if (!fssync.existsSync(TEXT_DIR)) await fs.mkdir(TEXT_DIR, { recursive: true });
 
@@ -85,9 +81,9 @@ async function buildIndex() {
   return payload;
 }
 
-// ---------- server ----------
 const app = express();
 app.use(cors());
+
 app.get('/', (_req, res) => res.send('OK ✅ Usa /index para ver el índice y /reindex para regenerarlo.'));
 app.get('/index', async (_req, res) => {
   const data = await safeReadJson(OUT_FILE);
@@ -97,8 +93,6 @@ app.get('/index', async (_req, res) => {
 app.get('/reindex', async (_req, res) => { const d = await buildIndex(); res.json({ ok: true, stats: d.stats, generatedAt: d.generatedAt }); });
 app.post('/reindex', async (_req, res) => { const d = await buildIndex(); res.json({ ok: true, stats: d.stats, generatedAt: d.generatedAt }); });
 
-// build al arrancar (no bloquea)
 buildIndex().catch(() => {});
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(✅ Server listo en puerto ${PORT}));
