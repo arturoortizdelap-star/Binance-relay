@@ -1,4 +1,6 @@
 // server.cjs — npm start → node server.cjs
+// Genera un index.json de todos los .txt/.md en ./texts y lo sirve por HTTP.
+
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs').promises;
@@ -13,13 +15,12 @@ const ALLOWED_EXT = new Set(['.txt', '.md']);
 const MAX_BYTES = 5 * 1024 * 1024;
 const CONCURRENCY = Math.max(2, Math.min(os.cpus().length, 8));
 
+// ---------- utils ----------
 function isAllowedFile(file) { return ALLOWED_EXT.has(path.extname(file).toLowerCase()); }
 async function safeReadJson(file) { try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch { return null; } }
 function sha1(buf) { return crypto.createHash('sha1').update(buf).digest('hex'); }
 function normalizeText(str){ return str.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trimEnd(); }
-function fileKey(st) {
-  return ${st.size}-${st.mtimeMs};
-}
+function fileKey(st) { return `${st.size}-${st.mtimeMs}`; }
 
 async function listFilesRecursive(dir) {
   const out = [];
@@ -34,6 +35,7 @@ async function listFilesRecursive(dir) {
   return out;
 }
 
+// ---------- indexer ----------
 async function buildIndex() {
   if (!fssync.existsSync(TEXT_DIR)) await fs.mkdir(TEXT_DIR, { recursive: true });
 
@@ -54,7 +56,7 @@ async function buildIndex() {
       const rel = path.relative(process.cwd(), abs);
       try {
         const st = await fs.stat(abs);
-        if (st.size > MAX_BYTES) { errors.push({ relPath: rel, reason: excede ${MAX_BYTES} bytes }); continue; }
+        if (st.size > MAX_BYTES) { errors.push({ relPath: rel, reason: `excede ${MAX_BYTES} bytes` }); continue; }
         const key = fileKey(st);
         const prev = prevMap.get(rel);
         if (prev && prev.validation && prev.validation.fileKey === key) { items.push(prev); reused++; continue; }
@@ -83,6 +85,7 @@ async function buildIndex() {
   return payload;
 }
 
+// ---------- server ----------
 const app = express();
 app.use(cors());
 
@@ -95,6 +98,8 @@ app.get('/index', async (_req, res) => {
 app.get('/reindex', async (_req, res) => { const d = await buildIndex(); res.json({ ok: true, stats: d.stats, generatedAt: d.generatedAt }); });
 app.post('/reindex', async (_req, res) => { const d = await buildIndex(); res.json({ ok: true, stats: d.stats, generatedAt: d.generatedAt }); });
 
+// build al arrancar (no bloquea)
 buildIndex().catch(() => {});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(✅ Server listo en puerto ${PORT}));
+app.listen(PORT, () => console.log(`✅ Server listo en puerto ${PORT}`));
