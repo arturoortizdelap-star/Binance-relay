@@ -17,7 +17,9 @@ function isAllowedFile(file) { return ALLOWED_EXT.has(path.extname(file).toLower
 async function safeReadJson(file) { try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch { return null; } }
 function sha1(buf) { return crypto.createHash('sha1').update(buf).digest('hex'); }
 function normalizeText(str){ return str.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trimEnd(); }
-function fileKey(st) { return ${st.size}-${st.mtimeMs}; }
+function fileKey(st) {
+  return ${st.size}-${st.mtimeMs};
+}
 
 async function listFilesRecursive(dir) {
   const out = [];
