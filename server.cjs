@@ -1,8 +1,8 @@
 // server.cjs — npm start → node server.cjs
-// Genera un index.json de todos los .txt/.md en ./texts y lo sirve por HTTP.
+// Genera un index.json de todos los .txt/.md en ./texts y lo sirve por HTTP (sin dependencias externas).
 
-const express = require('express');
-const cors = require('cors');
+const http = require('http');
+const url = require('url');
 const fs = require('fs').promises;
 const fssync = require('fs');
 const path = require('path');
@@ -35,7 +35,7 @@ async function listFilesRecursive(dir) {
   return out;
 }
 
-// ---------- indexer ----------
+// ---------- indexador ----------
 async function buildIndex() {
   if (!fssync.existsSync(TEXT_DIR)) await fs.mkdir(TEXT_DIR, { recursive: true });
 
@@ -85,21 +85,59 @@ async function buildIndex() {
   return payload;
 }
 
-// ---------- server ----------
-const app = express();
-app.use(cors());
+// ---------- helpers HTTP ----------
+function sendJSON(res, obj, status = 200) {
+  const body = JSON.stringify(obj);
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  });
+  res.end(body);
+}
+function sendText(res, text, status = 200) {
+  res.writeHead(status, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Access-Control-Allow-Origin': '*'
+  });
+  res.end(text);
+}
 
-app.get('/', (_req, res) => res.send('OK ✅ Usa /index para ver el índice y /reindex para regenerarlo.'));
-app.get('/index', async (_req, res) => {
-  const data = await safeReadJson(OUT_FILE);
-  if (!data) return res.status(404).json({ error: 'index.json no existe aún. Visita /reindex.' });
-  res.json(data);
+// ---------- servidor ----------
+const server = http.createServer(async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
+    return res.end();
+  }
+
+  const { pathname } = url.parse(req.url, true);
+
+  if (pathname === '/') {
+    return sendText(res, 'OK ✅ Usa /index para ver el índice y /reindex para regenerarlo.');
+  }
+
+  if (pathname === '/index') {
+    const data = await safeReadJson(OUT_FILE);
+    if (!data) return sendJSON(res, { error: 'index.json no existe aún. Visita /reindex.' }, 404);
+    return sendJSON(res, data);
+  }
+
+  if (pathname === '/reindex') {
+    try {
+      const d = await buildIndex();
+      return sendJSON(res, { ok: true, stats: d.stats, generatedAt: d.generatedAt });
+    } catch (e) {
+      return sendJSON(res, { ok: false, error: e?.message ?? String(e) }, 500);
+    }
+  }
+
+  return sendJSON(res, { error: 'Not found' }, 404);
 });
-app.get('/reindex', async (_req, res) => { const d = await buildIndex(); res.json({ ok: true, stats: d.stats, generatedAt: d.generatedAt }); });
-app.post('/reindex', async (_req, res) => { const d = await buildIndex(); res.json({ ok: true, stats: d.stats, generatedAt: d.generatedAt }); });
-
-// build al arrancar (no bloquea)
-buildIndex().catch(() => {});
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Server listo en puerto ${PORT}`));
+server.listen(PORT, () => console.log(`✅ Server http listo en puerto ${PORT}`));
