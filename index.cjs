@@ -1,4 +1,4 @@
-[4:26 p.m., 14/8/2025] Arturo Ortiz de la Peña: // index.cjs — Ejecuta con: node index.cjs
+// index.cjs — Ejecuta con: node index.cjs
 // Construye un index.json con todos los .txt y .md dentro de la carpeta actual (y subcarpetas)
 
 const fs = require('fs').promises;
